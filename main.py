@@ -1,3 +1,4 @@
+from handlers.feedback import feedback_conv
 import logging
 import threading
 import uvicorn
@@ -58,6 +59,7 @@ def main():
         show_portfolio_categories, pattern="^user_portfolio$"))
     application.add_handler(CallbackQueryHandler(
         navigate_portfolio, pattern="^view_cat_"))
+    application.add_handler(feedback_conv)
 
     # Orders Handler
     order_conv = ConversationHandler(
@@ -118,7 +120,7 @@ def main():
     application.add_handler(CallbackQueryHandler(
         admin_handle_toggle, pattern="^adm_tg_"))
     application.add_handler(CallbackQueryHandler(
-        admin_delete_main, pattern="^admin_delete_logic$"))
+        admin_delete_main, pattern="^admin_delete_main$"))
     application.add_handler(CallbackQueryHandler(
         admin_handle_delete, pattern="^adm_del_"))
     application.add_handler(CallbackQueryHandler(
