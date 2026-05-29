@@ -1,3 +1,5 @@
+# ከላይ ከነበረው መስመር ጋር እንዲህ አድርገህ አስተካክለው
+from handlers.feedback import feedback_conv, admin_reply_conv
 from handlers.feedback import feedback_conv
 import logging
 import threading
@@ -60,6 +62,7 @@ def main():
     application.add_handler(CallbackQueryHandler(
         navigate_portfolio, pattern="^view_cat_"))
     application.add_handler(feedback_conv)
+    application.add_handler(admin_reply_conv)  # ይህንን አዲስ መስመር ጨምር
 
     # Orders Handler
     order_conv = ConversationHandler(

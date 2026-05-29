@@ -5,13 +5,15 @@ from config.settings import settings
 
 db = get_db()
 FEEDBACK_WAITING = 1
+ADMIN_REPLY_WAITING = 2
+
+# --- 1. የተጠቃሚው የአስተያየት መስጫ ሎጅክ ---
 
 
 async def start_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    # ተጠቃሚው የትኛው ፖርትፎሊዮ ላይ አስተያየት እንደሰጠ ለማወቅ ID ውን እንይዛለን
     item_id = query.data.replace("give_fb_", "")
     context.user_data["feedback_item_id"] = item_id
 
@@ -30,7 +32,6 @@ async def receive_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_name = update.effective_user.full_name or "Unknown"
     item_id = context.user_data.get("feedback_item_id", "Unknown")
 
-    # ለአድሚኖች ማስተላለፊያ ሪፖርት
     feedback_report = (
         "💡 **አዲስ አስተያየት (New Feedback) ደርሷል!**\n\n"
         f"👤 **ከተጠቃሚ፦** {full_name} (@{username})\n"
@@ -39,10 +40,20 @@ async def receive_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💬 **የተሰጠ አስተያየት፦**\n{user_msg.text}"
     )
 
-    # በ .env ውስጥ ላሉት አድሚኖች በሙሉ መላክ
+    # ለአድሚኑ የሚላከው ቁልፍ (ከተጠቃሚው chat_id ጋር ተያይዞ ይሄዳል)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✍️ Reply to User",
+                              callback_data=f"adm_rply_{chat_id}")]
+    ])
+
     for admin_id in settings.ADMIN_IDS:
         try:
-            await context.bot.send_message(chat_id=admin_id, text=feedback_report, parse_mode="Markdown")
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=feedback_report,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
         except Exception as e:
             print(f"Failed to forward feedback to admin {admin_id}: {e}")
 
@@ -56,7 +67,54 @@ async def cancel_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     return ConversationHandler.END
 
-# በ main.py ውስጥ "from handlers.feedback import feedback_conv" ተብሎ የሚጠራው ዋናው ተለዋዋጭ ይህ ነው፡
+
+# --- 2. የአድሚን ምላሽ (Admin Reply) መስጫ ሎጅክ ---
+async def start_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # ምላሽ የሚላክለትን ተጠቃሚ ID ከማሳያው ላይ እንለያለን
+    target_user_id = query.data.replace("adm_rply_", "")
+    context.user_data["reply_target_user"] = target_user_id
+
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"🔄 **ለተጠቃሚው (ID: {target_user_id}) የሚልኩትን ምላሽ ይጻፉ፦**\n\n_(ለማቋረጥ /cancel ይበሉ)_"
+    )
+    return ADMIN_REPLY_WAITING
+
+
+async def send_admin_reply_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_msg = update.message
+    target_user_id = context.user_data.get("reply_target_user")
+
+    if not target_user_id:
+        await update.message.reply_text("🚨 ስህተት፡ ተጠቃሚው አልተገኘም።")
+        return ConversationHandler.END
+
+    try:
+        # ለአድሚኑ መልዕክት የተላከበትን ፎርማት ማዘጋጀት
+        reply_text = (
+            "✉️ **ከ Barrok Creative አድሚን የተላከ ምላሽ፦**\n\n"
+            f"{admin_msg.text}"
+        )
+        # ለተጠቃሚው ይላካል
+        await context.bot.send_message(chat_id=int(target_user_id), text=reply_text, parse_mode="Markdown")
+        await update.message.reply_text("✅ ምላሽዎ ለተጠቃሚው በተሳካ ሁኔታ ተላልፏል!")
+    except Exception as e:
+        await update.message.reply_text(f"❌ መልዕክቱን መላክ አልተቻለም። ተጠቃሚው ቦቱን አቁሞት ሊሆን ይችላል። ስህተት፦ {e}")
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def cancel_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ የአድሚን ምላሽ ተሰርዟል።")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+# --- 3. ለ main.py የሚዘጋጁ የ Conversation Handlers ---
 feedback_conv = ConversationHandler(
     entry_points=[CallbackQueryHandler(start_feedback, pattern="^give_fb_")],
     states={
@@ -64,4 +122,14 @@ feedback_conv = ConversationHandler(
             filters.TEXT & ~filters.COMMAND, receive_feedback)]
     },
     fallbacks=[CommandHandler("cancel", cancel_feedback)]
+)
+
+admin_reply_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(
+        start_admin_reply, pattern="^adm_rply_")],
+    states={
+        ADMIN_REPLY_WAITING: [MessageHandler(
+            filters.TEXT & ~filters.COMMAND, send_admin_reply_to_user)]
+    },
+    fallbacks=[CommandHandler("cancel", cancel_admin_reply)]
 )
